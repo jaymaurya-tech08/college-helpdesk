@@ -365,7 +365,7 @@
 
 .admin-stats {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 17px;
     margin-bottom: 25px;
 }
@@ -429,6 +429,19 @@
     margin-top: 8px;
     color: #8994a8;
     font-size: 10px;
+}
+
+.admin-stat-link {
+    display: inline-block;
+    margin-top: 10px;
+    color: var(--admin-primary);
+    font-size: 11px;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.admin-stat-link:hover {
+    text-decoration: underline;
 }
 
 /* ================= SECTION CARDS ================= */
@@ -930,6 +943,11 @@
                     <span>Categories</span>
                 </a>
 
+                <a href="{% url 'attendance:all_attendance' %}" class="admin-nav-link">
+                    <span class="admin-nav-icon" aria-hidden="true">&#128338;</span>
+                    <span>All Attendance</span>
+                </a>
+
                 <a href="{% url 'helpdesk:admin_requests' %}" class="admin-nav-link">
                     <span class="admin-nav-icon" aria-hidden="true">📋</span>
                     <span>All Requests</span>
@@ -1062,6 +1080,16 @@
                     <span class="admin-stat-note">Requests marked resolved</span>
                 </article>
 
+                <article class="admin-stat admin-raised">
+                    <div class="admin-stat-top">
+                        <span class="admin-stat-label">Attendance Records</span>
+                        <span class="admin-stat-icon admin-stat-green" aria-hidden="true">&#128338;</span>
+                    </div>
+                    <p class="admin-stat-number">{{ total_attendance|default:0 }}</p>
+                    <span class="admin-stat-note">Recorded class attendance</span>
+                    <a href="{% url 'attendance:all_attendance' %}" class="admin-stat-link">View attendance</a>
+                </article>
+
             </section>
 
             <!-- QUICK ACTIONS -->
@@ -1105,6 +1133,14 @@
                         <span>
                             <strong>Categories</strong>
                             <small>Organize request categories</small>
+                        </span>
+                    </a>
+
+                    <a href="{% url 'attendance:all_attendance' %}" class="admin-action">
+                        <span class="admin-action-icon" aria-hidden="true">&#128338;</span>
+                        <span>
+                            <strong>All Attendance</strong>
+                            <small>Review attendance records</small>
                         </span>
                     </a>
 

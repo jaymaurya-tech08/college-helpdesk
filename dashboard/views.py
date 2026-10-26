@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.views.decorators.http import require_POST
 
 from helpdesk.models import Request, Department
+from attendance.models import AttendanceRecord
 from django.contrib import messages
 
 
@@ -159,6 +160,7 @@ def admin_dashboard(request):
     ).count()
 
     total_requests = Request.objects.count()
+    total_attendance = AttendanceRecord.objects.count()
 
     pending_requests = Request.objects.filter(
         status=Request.Status.PENDING
@@ -196,6 +198,7 @@ def admin_dashboard(request):
             "total_students": total_students,
             "total_staff": total_staff,
             "total_requests": total_requests,
+            "total_attendance": total_attendance,
 
             "pending_requests": pending_requests,
             "in_progress_requests": in_progress_requests,

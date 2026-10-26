@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+{% block title %}Register Student Face{% endblock %}
+
+{% block content %}
+<div class="container mt-5 mb-5">
+    <h2 class="mb-3">Register Student Face</h2>
+    <p class="text-muted mb-4">Capture the student live from several angles. Each frame is converted to a face embedding; raw captures are processed temporarily and then discarded.</p>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+
+    <form id="faceRegistrationForm" method="post" enctype="multipart/form-data" class="card p-4 shadow-sm">
+        {% csrf_token %}
+        <div class="mb-4">
+            <label for="studentId" class="form-label">Select student</label>
+            <select id="studentId" name="student_id" class="form-select" required>
+                <option value="">-- Choose Student --</option>
+                {% for s in students %}
+                    <option value="{{ s.id }}">{{ s.get_full_name|default:s.username }} ({{ s.email }})</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <section class="mb-4" aria-labelledby="liveCaptureTitle">
+            <h3 id="liveCaptureTitle" class="h5">Live camera capture <span class="text-danger">(required)</span></h3>
+            <p class="small text-muted">Keep only the selected student in view. Follow the five animated prompts: center, left, right, up, then down. The system captures detected poses automatically. If a pose is not detected, hold that position and use the manual capture button. Only the five captured frames are submitted for registration.</p>
+
+            <style>
+                .pose-guide { max-width: 720px; border-radius: 1rem; background: #f3f7ff; padding: 1rem; }
+                .pose-stage { display: inline-flex; align-items: center; gap: .45rem; margin: .25rem .35rem .25rem 0; padding: .45rem .7rem; border: 1px solid #cbd5e1; border-radius: 2rem; color: #64748b; background: white; }
+                .pose-stage.active { color: #084298; border-color: #0d6efd; background: #e7f1ff; font-weight: 600; }
+                .pose-stage.done { color: #146c43; border-color: #75b798; background: #d1e7dd; }
+                #poseArrow { display: inline-block; font-size: 2rem; line-height: 1; transform-origin: center; animation: posePulse 1.1s ease-in-out infinite; }
+                .pose-avatar { width: 76px; height: 76px; margin: 0 auto .65rem; border-radius: 50%; display: grid; place-items: center; color: #3565a9; background: linear-gradient(145deg,#dcebff,#a9c9f5); transition: transform .5s ease; }
+                .pose-avatar svg { width: 54px; height: 54px; }
+                .pose-avatar.turn-left { transform: perspective(160px) rotateY(-28deg); }
+                .pose-avatar.turn-right { transform: perspective(160px) rotateY(28deg); }
+                .pose-avatar.tilt-up { transform: perspective(160px) rotateX(20deg); }
+                .pose-avatar.tilt-down { transform: perspective(160px) rotateX(-20deg); }
+                @keyframes posePulse { 50% { transform: scale(1.12); } }
+                @media (prefers-reduced-motion: reduce) { #poseArrow, .pose-avatar { animation: none; transition: none; } }
+            </style>
+            <div class="pose-guide mb-3" aria-live="polite">
+                <div id="poseAvatar" class="pose-avatar" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none"><path d="M13 29c0-14 8-23 19-23s19 9 19 23v8c0 13-8 21-19 21S13 50 13 37v-8Z" fill="#F4C9A8"/><path d="M13 28C13 13 21 6 32 6s19 8 19 22l-7-9-12-4-11 5-8 8Z" fill="#394B67"/><ellipse cx="24" cy="32" rx="2" ry="2.5" fill="#24344D"/><ellipse cx="40" cy="32" rx="2" ry="2.5" fill="#24344D"/><path d="m32 33-2 8h4M27 46c3 2 7 2 10 0" stroke="#925E4D" stroke-width="2" stroke-linecap="round"/></svg></div>
+                <div id="poseArrow" aria-hidden="true">•</div>
+                <div id="posePrompt" class="fw-semibold">Start the camera to begin guided capture</div>
+                <div id="poseStages" class="mt-2">
+                    <span class="pose-stage">① Center</span><span class="pose-stage">② Left</span><span class="pose-stage">③ Right</span><span class="pose-stage">④ Up</span><span class="pose-stage">⑤ Down</span>
+                </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <button type="button" id="startCameraButton" class="btn btn-outline-primary">Start camera</button>
+                <button type="button" id="manualCaptureButton" class="btn btn-primary" disabled>Capture this pose manually</button>
+                <button type="button" id="stopCameraButton" class="btn btn-outline-secondary" disabled>Stop camera</button>
+                <button type="button" id="clearCapturesButton" class="btn btn-outline-danger" disabled>Clear captures</button>
+            </div>
+
+            <video id="enrollmentVideo" class="w-100 rounded border bg-dark" style="max-width:720px; display:none;" autoplay playsinline muted></video>
+            <canvas id="captureCanvas" class="d-none"></canvas>
+            <input type="file" id="livePhotos" name="live_photos" accept="image/jpeg" multiple hidden>
+            <div id="captureStatus" class="small mt-2" aria-live="polite">0 of 5 guided poses captured. No images are saved until you submit registration.</div>
+        </section>
+
+        <details class="mb-4">
+            <summary class="small">Optional: add clear photos from different angles</summary>
+            <div class="mt-3">
+                <label for="manualPhotos" class="form-label">Additional photos</label>
+                <input type="file" id="manualPhotos" name="photos" class="form-control" multiple accept="image/*">
+                <div class="form-text">The five guided live captures are still required. Additional photos can improve matching across different lighting and angles.</div>
+            </div>
+        </details>
+
+        <button type="submit" id="registerFaceButton" class="btn btn-success align-self-start" disabled>Register face profile</button>
+    </form>
+</div>
+
+<script>
+(() => {
+    const form = document.getElementById("faceRegistrationForm");
+    const video = document.getElementById("enrollmentVideo");
+    const canvas = document.getElementById("captureCanvas");
+    const livePhotos = document.getElementById("livePhotos");
+    const status = document.getElementById("captureStatus");
+    const prompt = document.getElementById("posePrompt");
+    const arrow = document.getElementById("poseArrow");
+    const avatar = document.getElementById("poseAvatar");
+    const stageElements = Array.from(document.querySelectorAll(".pose-stage"));
+    const startButton = document.getElementById("startCameraButton");
+    const manualButton = document.getElementById("manualCaptureButton");
+    const stopButton = document.getElementById("stopCameraButton");
+    const clearButton = document.getElementById("clearCapturesButton");
+    const submitButton = document.getElementById("registerFaceButton");
+    let stream = null;
+    let capturing = false;
+    let centerYaw = 0;
+    let centerPitch = 0;
+    let sideDirection = 0;
+    let verticalDirection = 0;
+    let stageIndex = 0;
+    let steadyFrames = 0;
+    let manualCaptureRequested = false;
+    let lastPose = null;
+    let poseCheckInFlight = false;
+    const stages = [
+        { title: "Look straight at the camera and hold still", icon: "•", motion: "", detect: () => true },
+        { title: "Slowly turn your face to the LEFT", icon: "←", motion: "turn-left", detect: p => Math.abs(p.yaw - centerYaw) > 10 && Math.abs(p.yaw - centerYaw) < 55 && Math.abs(p.pitch - centerPitch) < 30 },
+        { title: "Slowly turn your face to the RIGHT", icon: "→", motion: "turn-right", detect: p => sideDirection !== 0 && (p.yaw - centerYaw) * sideDirection < -10 && Math.abs(p.yaw - centerYaw) < 55 && Math.abs(p.pitch - centerPitch) < 30 },
+        { title: "Tilt your face UP", icon: "↑", motion: "tilt-up", detect: p => Math.abs(p.pitch - centerPitch) > 8 && Math.abs(p.pitch - centerPitch) < 45 && Math.abs(p.yaw - centerYaw) < 30 },
+        { title: "Tilt your face DOWN", icon: "↓", motion: "tilt-down", detect: p => verticalDirection !== 0 && (p.pitch - centerPitch) * verticalDirection < -8 && Math.abs(p.pitch - centerPitch) < 45 && Math.abs(p.yaw - centerYaw) < 30 }
+    ];
+
+    function setCaptureCount(count) {
+        status.textContent = `${count} of 5 guided poses captured.`;
+        submitButton.disabled = count !== 5;
+        clearButton.disabled = count === 0;
+    }
+
+    function paintStage(index) {
+        stageElements.forEach((el, i) => {
+            el.classList.toggle("done", i < index);
+            el.classList.toggle("active", i === index);
+        });
+        if (index < stages.length) {
+            prompt.textContent = stages[index].title;
+            arrow.textContent = stages[index].icon;
+            avatar.className = `pose-avatar ${stages[index].motion || ""}`;
+        } else {
+            prompt.textContent = "All five poses captured. You can register this face profile.";
+            arrow.textContent = "OK";
+            avatar.className = "pose-avatar";
+        }
+    }
+
+    const csrf = form.querySelector("[name=csrfmiddlewaretoken]").value;
+    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    async function getPose() {
+        canvas.width = Math.min(video.videoWidth, 800);
+        canvas.height = Math.round(video.videoHeight * canvas.width / video.videoWidth);
+        canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.78));
+        if (!blob) throw new Error("Could not read camera frame");
+        const body = new FormData();
+        body.append("frame", blob, "pose-check.jpg");
+        const response = await fetch("{% url 'attendance:face_pose_check' %}", {
+            method: "POST", headers: { "X-CSRFToken": csrf }, body
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || "Face pose check failed");
+        return result;
+    }
+
+    async function saveCurrentFrame() {
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
+        if (!blob) throw new Error("Could not capture this pose");
+        const transfer = new DataTransfer();
+        Array.from(livePhotos.files).forEach(file => transfer.items.add(file));
+        transfer.items.add(new File([blob], `live-face-${Date.now()}.jpg`, { type: "image/jpeg" }));
+        livePhotos.files = transfer.files;
+        setCaptureCount(transfer.files.length);
+    }
+
+    async function captureManualPose() {
+        if (!stream || !video.videoWidth) {
+            status.textContent = "Wait for the live camera preview before capturing.";
+            return;
+        }
+        canvas.width = Math.min(video.videoWidth, 800);
+        canvas.height = Math.round(video.videoHeight * canvas.width / video.videoWidth);
+        canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (stageIndex === 1 && lastPose) sideDirection = Math.sign(lastPose.yaw - centerYaw);
+        if (stageIndex === 3 && lastPose) verticalDirection = Math.sign(lastPose.pitch - centerPitch);
+        await saveCurrentFrame();
+        stageIndex++;
+        steadyFrames = 0;
+        paintStage(stageIndex);
+        if (stageIndex >= stages.length) {
+            status.textContent = "All five poses captured manually. You can register this face profile.";
+            capturing = false;
+            stopCamera();
+        } else {
+            status.textContent = `Manual capture saved. Now follow pose ${stageIndex + 1} of 5.`;
+        }
+    }
+
+    manualButton.addEventListener("click", async () => {
+        if (capturing && poseCheckInFlight) {
+            manualCaptureRequested = true;
+            capturing = false;
+            status.textContent = "Manual capture requested. Hold still for a moment…";
+            return;
+        }
+        capturing = false;
+        manualCaptureRequested = false;
+        try {
+            await captureManualPose();
+        } catch (error) {
+            status.textContent = "Could not capture that frame. Try again.";
+        }
+    });
+
+    async function runGuidedCapture() {
+        if (capturing) return;
+        capturing = true;
+        paintStage(stageIndex);
+        try {
+            while (capturing && stageIndex < stages.length) {
+                if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) { await delay(250); continue; }
+                poseCheckInFlight = true;
+                const pose = await getPose();
+                poseCheckInFlight = false;
+                if (manualCaptureRequested) {
+                    manualCaptureRequested = false;
+                    await captureManualPose();
+                    await delay(250);
+                    break;
+                }
+                if (!capturing) break;
+                lastPose = pose;
+                if (pose.multiple_faces) {
+                    status.textContent = "More than one face detected. Keep only the selected student in view.";
+                    steadyFrames = 0;
+                } else if (!pose.face_detected) {
+                    status.textContent = "Move into view so the camera can see one face.";
+                    steadyFrames = 0;
+                } else {
+                    status.textContent = `${stageIndex} of 5 poses captured. Yaw ${pose.yaw.toFixed(0)}°, pitch ${pose.pitch.toFixed(0)}°. Hold the requested position steady.`;
+                    if (stages[stageIndex].detect(pose)) steadyFrames++;
+                    else steadyFrames = 0;
+                    if (steadyFrames >= 2) {
+                        if (stageIndex === 0) { centerYaw = pose.yaw; centerPitch = pose.pitch; }
+                        if (stageIndex === 1) sideDirection = Math.sign(pose.yaw - centerYaw);
+                        if (stageIndex === 3) verticalDirection = Math.sign(pose.pitch - centerPitch);
+                        await saveCurrentFrame();
+                        stageIndex++;
+                        steadyFrames = 0;
+                        paintStage(stageIndex);
+                        if (stageIndex < stages.length) {
+                            status.textContent = "Pose captured. Move to the next position.";
+                            await delay(700);
+                        }
+                    }
+                }
+                await delay(250);
+            }
+        } catch (error) {
+            poseCheckInFlight = false;
+            if (manualCaptureRequested) {
+                manualCaptureRequested = false;
+                try { await captureManualPose(); } catch (captureError) {
+                    status.textContent = "Could not capture that frame. Try again.";
+                }
+                return;
+            }
+            capturing = false;
+            status.textContent = `Automatic pose detection failed (${error.message}). Keep the camera on and use “Capture this pose manually” for each prompt.`;
+            return;
+        }
+        capturing = false;
+        if (stageIndex === stages.length) {
+            setCaptureCount(5);
+            stopCamera();
+        }
+    }
+
+    function stopCamera() {
+        capturing = false;
+        if (stream) stream.getTracks().forEach(track => track.stop());
+        stream = null;
+        video.srcObject = null;
+        video.style.display = "none";
+        stopButton.disabled = true;
+        manualButton.disabled = true;
+        startButton.disabled = false;
+    }
+
+    startButton.addEventListener("click", async () => {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            status.textContent = "Live camera access is unavailable. Open this page on localhost or through HTTPS.";
+            return;
+        }
+        try {
+            livePhotos.value = "";
+            setCaptureCount(0);
+            sideDirection = 0;
+            verticalDirection = 0;
+            stageIndex = 0;
+            steadyFrames = 0;
+            manualCaptureRequested = false;
+            lastPose = null;
+            poseCheckInFlight = false;
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: false
+            });
+            video.srcObject = stream;
+            video.style.display = "block";
+            await video.play();
+            stopButton.disabled = false;
+            manualButton.disabled = false;
+            startButton.disabled = true;
+            status.textContent = "Camera ready. Follow the animated pose prompt.";
+            runGuidedCapture();
+        } catch (error) {
+            status.textContent = "Could not access the camera. Allow camera permission and try again.";
+        }
+    });
+
+    stopButton.addEventListener("click", stopCamera);
+
+    clearButton.addEventListener("click", () => {
+        livePhotos.value = "";
+        setCaptureCount(0);
+    });
+
+    form.addEventListener("submit", event => {
+        if (livePhotos.files.length !== 5) {
+            event.preventDefault();
+            status.textContent = "Complete all five guided poses before registering this face.";
+            return;
+        }
+        submitButton.disabled = true;
+        submitButton.textContent = "Processing face captures...";
+    });
+
+    window.addEventListener("pagehide", () => {
+        stopCamera();
+    });
+})();
+</script>
+{% endblock %}

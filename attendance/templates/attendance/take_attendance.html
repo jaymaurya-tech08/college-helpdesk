@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Take Attendance{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Take Attendance</h2>
+
+    <div class="row mt-4">
+        <!-- Live Webcam -->
+        <div class="col-md-7">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">Live Webcam</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label>Class Session Name</label>
+                        <input type="text" id="sessionName" class="form-control" value="Period 1 - Data Structures">
+                    </div>
+                    <button class="btn btn-success me-2" onclick="startCamera()">Start Camera</button>
+                    <button class="btn btn-danger" onclick="stopCamera()">Stop Camera</button>
+
+                    <div class="mt-3">
+                        <img id="videoFeed" src="" style="width:100%; max-width:640px; display:none; border:2px solid #333;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Whole-class photo attendance -->
+        <div class="col-md-5">
+            <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">Whole-Class Photo Attendance</div>
+                <div class="card-body">
+                    <form id="photoForm">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="photoSession" class="form-label">Class session</label>
+                            <input type="text" id="photoSession" name="class_session" class="form-control" maxlength="150" value="Period 1 - Data Structures" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="classPhoto" class="form-label">Upload a clear photo of the class</label>
+                            <input type="file" id="classPhoto" name="photo" class="form-control" accept="image/*" required>
+                        </div>
+
+                        <fieldset class="mb-3">
+                            <legend class="form-label fs-6">Students expected in this session</legend>
+                            <p class="small text-muted">Select the expected roster. Only active students with a registered face are listed; register missing faces first. The upload creates a preview only. Nothing is saved until you review and confirm the result.</p>
+                            <a class="small d-inline-block mb-2" href="{% url 'attendance:register_face' %}">Register student faces</a>
+                            <input type="search" id="rosterSearch" class="form-control mb-2" placeholder="Filter students..." aria-label="Filter students">
+                            <button type="button" id="toggleVisibleStudents" class="btn btn-sm btn-outline-secondary mb-2">Select all visible</button>
+                            <div class="border rounded p-2" style="max-height:220px; overflow:auto;">
+                                {% for student in students %}
+                                    <label class="form-check d-flex gap-2 align-items-center roster-student"
+                                           data-name="{{ student.get_full_name|default:student.username|lower }} {{ student.username|lower }}">
+                                        <input class="form-check-input roster-checkbox mt-0" type="checkbox" name="expected_students" value="{{ student.pk }}">
+                                        <span class="form-check-label">{{ student.get_full_name|default:student.username }} <small class="text-muted">({{ student.username }})</small></span>
+                                    </label>
+                                {% empty %}
+                                    <p class="small text-muted mb-0">No active students are available for your roster.</p>
+                                {% endfor %}
+                            </div>
+                            <small id="rosterCount" class="text-muted">0 students selected</small>
+                        </fieldset>
+
+                        <button type="submit" id="photoSubmit" class="btn btn-info text-white">Preview attendance</button>
+                    </form>
+                    <div id="photoResult" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function startCamera() {
+    const session = document.getElementById("sessionName").value;
+    const img = document.getElementById("videoFeed");
+    img.style.display = "block";
+    img.src = "{% url 'attendance:video_feed' %}?session=" + encodeURIComponent(session);
+}
+
+function stopCamera() {
+    const img = document.getElementById("videoFeed");
+    img.src = "";
+    img.style.display = "none";
+}
+
+const rosterCheckboxes = Array.from(document.querySelectorAll(".roster-checkbox"));
+const rosterCount = document.getElementById("rosterCount");
+const rosterSearch = document.getElementById("rosterSearch");
+const toggleVisibleStudents = document.getElementById("toggleVisibleStudents");
+
+function updateRosterCount() {
+    const selected = rosterCheckboxes.filter(input => input.checked).length;
+    rosterCount.textContent = `${selected} student${selected === 1 ? "" : "s"} selected`;
+}
+
+rosterCheckboxes.forEach(input => input.addEventListener("change", updateRosterCount));
+
+rosterSearch.addEventListener("input", function() {
+    const term = this.value.trim().toLowerCase();
+    document.querySelectorAll(".roster-student").forEach(label => {
+        label.hidden = !label.dataset.name.includes(term);
+    });
+});
+
+toggleVisibleStudents.addEventListener("click", function() {
+    const visible = document.querySelectorAll(".roster-student:not([hidden]) .roster-checkbox");
+    const allSelected = Array.from(visible).every(input => input.checked);
+    visible.forEach(input => { input.checked = !allSelected; });
+    updateRosterCount();
+});
+
+const photoForm = document.getElementById("photoForm");
+const photoSubmit = document.getElementById("photoSubmit");
+const photoResult = document.getElementById("photoResult");
+
+function lockPhotoForm(locked) {
+    document.getElementById("photoSession").disabled = locked;
+    document.getElementById("classPhoto").disabled = locked;
+    document.getElementById("rosterSearch").disabled = locked;
+    document.getElementById("toggleVisibleStudents").disabled = locked;
+    rosterCheckboxes.forEach(input => { input.disabled = locked; });
+    photoSubmit.disabled = locked;
+}
+
+function appendStudentList(container, title, names) {
+    const section = document.createElement("section");
+    section.className = "mt-2";
+    const heading = document.createElement("strong");
+    heading.textContent = `${title} (${names.length})`;
+    section.appendChild(heading);
+    const list = document.createElement("ul");
+    for (const name of names) {
+        const item = document.createElement("li");
+        item.textContent = name;
+        list.appendChild(item);
+    }
+    section.appendChild(list);
+    container.appendChild(section);
+}
+
+function showAttendanceResult(data, stage) {
+    photoResult.replaceChildren();
+    const alert = document.createElement("div");
+    alert.className = `alert ${stage === "preview" ? "alert-info" : "alert-success"}`;
+    alert.textContent = data.message;
+    photoResult.appendChild(alert);
+
+    const faceSummary = document.createElement("p");
+    faceSummary.className = "small mb-1";
+    faceSummary.textContent = `Faces detected: ${data.faces_detected}. Unmatched or outside this roster: ${data.unmatched_faces}.`;
+    photoResult.appendChild(faceSummary);
+
+    const details = document.createElement("details");
+    details.className = "small mt-2";
+    const heading = document.createElement("summary");
+    heading.textContent = "Review student results";
+    details.appendChild(heading);
+    appendStudentList(details, "Present", data.present_students);
+    appendStudentList(details, "Absent", data.absent_students);
+    photoResult.appendChild(details);
+
+    if (stage === "preview") {
+        lockPhotoForm(true);
+        const actions = document.createElement("div");
+        actions.className = "d-flex gap-2 mt-3";
+
+        const confirmButton = document.createElement("button");
+        confirmButton.type = "button";
+        confirmButton.className = "btn btn-success";
+        confirmButton.textContent = "Confirm and save attendance";
+        confirmButton.addEventListener("click", () => submitPhotoAction("confirm", confirmButton));
+
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.className = "btn btn-outline-secondary";
+        cancelButton.textContent = "Cancel preview";
+        cancelButton.addEventListener("click", () => submitPhotoAction("cancel", cancelButton));
+
+        actions.append(confirmButton, cancelButton);
+        photoResult.appendChild(actions);
+    } else {
+        lockPhotoForm(false);
+    }
+}
+
+async function submitPhotoAction(action, button) {
+    button.disabled = true;
+    const formData = new FormData(photoForm);
+    formData.set("action", action);
+    try {
+        const response = await fetch("{% url 'attendance:photo_attendance' %}", {
+            method: "POST",
+            body: formData
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            photoResult.replaceChildren();
+            const alert = document.createElement("div");
+            alert.className = "alert alert-danger";
+            alert.textContent = data.message || "Attendance could not be updated.";
+            photoResult.appendChild(alert);
+            lockPhotoForm(false);
+            return;
+        }
+
+        if (action === "cancel") {
+            photoResult.textContent = "Preview canceled. No attendance changes were made.";
+            lockPhotoForm(false);
+            return;
+        }
+
+        showAttendanceResult(data, data.stage);
+    } catch (error) {
+        photoResult.textContent = "The attendance request failed. Check your connection and try again.";
+        lockPhotoForm(false);
+    }
+}
+
+photoForm.addEventListener("submit", async function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+
+    if (!formData.getAll("expected_students").length) {
+        photoResult.textContent = "Select the students who belong to this class session.";
+        return;
+    }
+
+    formData.set("action", "preview");
+    photoResult.textContent = "Checking the photo and preparing an attendance preview...";
+    photoSubmit.disabled = true;
+    try {
+        const response = await fetch("{% url 'attendance:photo_attendance' %}", {
+            method: "POST",
+            body: formData
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            photoResult.textContent = data.message || "Could not prepare the attendance preview.";
+            photoSubmit.disabled = false;
+            return;
+        }
+        showAttendanceResult(data, "preview");
+    } catch (error) {
+        photoResult.textContent = "The attendance request failed. Check your connection and try again.";
+        photoSubmit.disabled = false;
+    }
+});
+</script>
+{% endblock %}

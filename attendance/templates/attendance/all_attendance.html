@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}All Attendance{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>All Attendance Records</h2>
+
+    <form method="get" class="row g-3 mb-4">
+        <div class="col-auto">
+            <input type="date" name="date" class="form-control" value="{{ selected_date }}">
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-primary">Filter</button>
+            <a href="{% url 'attendance:all_attendance' %}" class="btn btn-secondary">Clear</a>
+        </div>
+    </form>
+
+    <table class="table table-bordered table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Student</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Session</th>
+                <th>Status</th>
+                <th>Confidence</th>
+                <th>Marked By</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in records %}
+            <tr>
+                <td>{{ r.student.get_full_name|default:r.student.username }}</td>
+                <td>{{ r.date }}</td>
+                <td>{{ r.time }}</td>
+                <td>{{ r.class_session }}</td>
+                <td><span class="badge bg-success">{{ r.status }}</span></td>
+                <td>{{ r.confidence|floatformat:2 }}</td>
+                <td>{{ r.marked_by.get_full_name|default:r.marked_by.username }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="text-center">No records found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if records.has_other_pages %}
+    <nav aria-label="Attendance pages">
+        <ul class="pagination justify-content-center">
+            {% if records.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?date={{ selected_date|urlencode }}&amp;page={{ records.previous_page_number }}">Previous</a>
+                </li>
+            {% endif %}
+            <li class="page-item disabled">
+                <span class="page-link">Page {{ records.number }} of {{ records.paginator.num_pages }}</span>
+            </li>
+            {% if records.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?date={{ selected_date|urlencode }}&amp;page={{ records.next_page_number }}">Next</a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

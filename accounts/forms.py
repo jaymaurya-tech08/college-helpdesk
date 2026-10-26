@@ -7,6 +7,18 @@ from helpdesk.models import Department
 User = get_user_model()
 
 
+class PasswordResetRequestForm(forms.Form):
+    email = forms.EmailField(
+        label="Account email",
+        widget=forms.EmailInput(attrs={
+            "class": "auth-input",
+            "placeholder": "you@example.com",
+            "autocomplete": "email",
+            "autofocus": True,
+        }),
+    )
+
+
 class StudentRegistrationForm(UserCreationForm):
     first_name = forms.CharField(
         max_length=150,

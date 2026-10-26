@@ -131,6 +131,10 @@
                         {% endfor %}
                     </div>
 
+                    <div class="auth-options" style="justify-content:flex-end; margin-top:-8px;">
+                        <a href="{% url 'accounts:password_reset' %}">Forgot password?</a>
+                    </div>
+
                     <button class="auth-submit" type="submit">
                         Sign in securely&nbsp; →
                     </button>

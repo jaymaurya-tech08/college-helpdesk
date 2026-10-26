@@ -858,6 +858,11 @@
                     <span>Departments</span>
                 </a>
 
+                <a href="{% url 'attendance:all_attendance' %}">
+                    <span class="hd-nav-icon">&#128338;</span>
+                    <span>All Attendance</span>
+                </a>
+
                 <a href="{% url 'helpdesk:admin_requests' %}">
                     <span class="hd-nav-icon">📑</span>
                     <span>All Requests</span>
@@ -1056,6 +1061,9 @@
                             <small>Track your tickets</small>
                         </span>
                     </a>
+                    <a href="{% url 'attendance:my_attendance' %}" class="btn btn-outline-primary btn-sm">
+    My Attendance
+</a>
 
                     <a
                         href="{% url 'accounts:edit_profile' %}"
@@ -1245,6 +1253,20 @@
             </span>
         </a>
     </div>
+    <div class="d-flex gap-2 flex-wrap mt-3">
+    <a href="{% url 'attendance:register_face' %}" class="btn btn-primary btn-sm">
+        Register Student Face
+    </a>
+    <a href="{% url 'attendance:take_attendance' %}" class="btn btn-success btn-sm">
+        Take Attendance
+    </a>
+    <a href="{% url 'attendance:all_attendance' %}" class="btn btn-info btn-sm text-white">
+        View All Attendance
+    </a>
+    <a href="{% url 'attendance:my_attendance' %}" class="btn btn-outline-primary btn-sm">
+        My Attendance
+    </a>
+</div>
 </section>
             <section class="hd-card">
                 <div class="hd-card-header">
@@ -1411,6 +1433,9 @@
                             <small>Student accounts</small>
                         </span>
                     </a>
+                    <a href="{% url 'attendance:all_attendance' %}" class="btn btn-dark btn-sm">
+    Attendance Records
+</a>
 
                     <a
                         href="{% url 'helpdesk:admin_staff' %}"

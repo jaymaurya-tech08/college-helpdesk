@@ -402,6 +402,15 @@
             font-size: 11px;
             line-height: 1.6;
         }
+        .face-enrollment { margin: 20px 0; padding: 18px; border: 1px solid rgba(82,225,229,.2); border-radius: 16px; background: rgba(82,225,229,.045); }
+        .face-guide { display:flex; align-items:center; gap:14px; margin-bottom:14px; color:#aab7d0; font-size:12px; line-height:1.6; }
+        .face-guide-avatar { flex:0 0 58px; height:58px; display:grid; place-items:center; border-radius:50%; background:linear-gradient(145deg,#253e71,#162949); animation: guideTurn 3s ease-in-out infinite alternate; }
+        .face-guide-avatar svg { width:40px; height:40px; }
+        @keyframes guideTurn { 0% { transform:perspective(120px) rotateY(-18deg); } 50% { transform:perspective(120px) rotateY(0); } 100% { transform:perspective(120px) rotateY(18deg); } }
+        .camera-preview { display:none; width:100%; max-height:250px; object-fit:cover; border-radius:12px; background:#070b16; transform:scaleX(-1); }
+        .face-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+        .face-action { padding:9px 12px; border:1px solid rgba(255,255,255,.15); border-radius:10px; background:rgba(255,255,255,.06); color:#edf2ff; font-size:12px; cursor:pointer; }
+        .face-help { margin-top:8px; color:#929db5; font-size:11px; line-height:1.6; }
         .field select {
     width: 100%;
     padding: 12px;
@@ -710,7 +719,7 @@
 
             <div class="form-card">
 
-                <form method="POST" autocomplete="on">
+                <form method="POST" autocomplete="on" enctype="multipart/form-data">
                     {% csrf_token %}
 
                     {% if form.non_field_errors %}
@@ -774,6 +783,25 @@
     {% endfor %}
 </div>
 
+                    <section class="face-enrollment" aria-labelledby="faceEnrollmentTitle">
+                        <h3 id="faceEnrollmentTitle" style="margin:0 0 10px;font-size:15px;">Add your face for attendance <span style="color:#929db5;font-size:11px;font-weight:400;">(recommended)</span></h3>
+                        <div class="face-guide">
+                            <span class="face-guide-avatar" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none"><path d="M13 29c0-14 8-23 19-23s19 9 19 23v8c0 13-8 21-19 21S13 50 13 37v-8Z" fill="#F4C9A8"/><path d="M13 28C13 13 21 6 32 6s19 8 19 22l-7-9-12-4-11 5-8 8Z" fill="#394B67"/><ellipse cx="24" cy="32" rx="2" ry="2.5" fill="#24344D"/><ellipse cx="40" cy="32" rx="2" ry="2.5" fill="#24344D"/><path d="m32 33-2 8h4M27 46c3 2 7 2 10 0" stroke="#925E4D" stroke-width="2" stroke-linecap="round"/></svg></span>
+                            <span id="faceCaptureStatus">Take a clear selfie with the camera or choose up to five photos total. If you skip, staff can register your face later from their dashboard.</span>
+                        </div>
+                        <video id="signupCamera" class="camera-preview" autoplay playsinline muted></video>
+                        <canvas id="signupCanvas" style="display:none;"></canvas>
+                        <input id="cameraFacePhoto" type="file" name="camera_face_photo" accept="image/jpeg" hidden>
+                        <div class="face-actions">
+                            <button type="button" id="startSignupCamera" class="face-action">Open camera</button>
+                            <button type="button" id="captureSignupPhoto" class="face-action" disabled>Take selfie</button>
+                            <button type="button" id="stopSignupCamera" class="face-action" disabled>Close camera</button>
+                        </div>
+                        <label for="facePhotoUpload" class="form-label" style="font-size:12px;">Or choose existing face photos</label>
+                        <input id="facePhotoUpload" class="form-control" type="file" name="face_photos" accept="image/jpeg,image/png,image/webp" multiple>
+                        <div class="face-help">Use well-lit photos with only you in frame. We convert them to face-matching data for attendance and discard the uploaded images. You can skip this and ask staff to enroll you later.</div>
+                    </section>
+
                     <div class="field">
                         <label for="{{ form.password1.id_for_label }}">Password</label>
                         <div class="password-wrap">
@@ -833,6 +861,105 @@
 </div>
 
 <script>
+    // Optional signup selfie: images are only sent when the account form is submitted.
+    (function () {
+        const camera = document.getElementById('signupCamera');
+        const canvas = document.getElementById('signupCanvas');
+        const cameraInput = document.getElementById('cameraFacePhoto');
+        const uploadInput = document.getElementById('facePhotoUpload');
+        const status = document.getElementById('faceCaptureStatus');
+        const start = document.getElementById('startSignupCamera');
+        const capture = document.getElementById('captureSignupPhoto');
+        const stop = document.getElementById('stopSignupCamera');
+        let stream = null;
+
+        function closeCamera() {
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            stream = null;
+            camera.srcObject = null;
+            camera.style.display = 'none';
+            capture.disabled = true;
+            stop.disabled = true;
+            start.disabled = false;
+        }
+
+        start.addEventListener('click', async function () {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                status.textContent = 'Camera access needs localhost or HTTPS. You can upload a photo instead.';
+                return;
+            }
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false
+                });
+                camera.srcObject = stream;
+                camera.style.display = 'block';
+                await camera.play();
+                if (!camera.videoWidth) {
+                    await new Promise((resolve, reject) => {
+                        const timer = setTimeout(() => reject(new Error('Camera preview did not start')), 5000);
+                        camera.addEventListener('loadedmetadata', () => { clearTimeout(timer); resolve(); }, { once: true });
+                    });
+                }
+                capture.disabled = false;
+                stop.disabled = false;
+                start.disabled = true;
+                status.textContent = 'Center your face in the camera and take a clear selfie.';
+            } catch (error) {
+                closeCamera();
+                status.textContent = 'Could not open the camera. Allow camera permission or upload a photo.';
+            }
+        });
+
+        capture.addEventListener('click', function () {
+            if (!camera.videoWidth || camera.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                status.textContent = 'Wait until the live preview appears, then take the selfie.';
+                return;
+            }
+            if (uploadInput.files.length >= 5) {
+                status.textContent = 'You already selected five uploaded photos. Remove one to add a camera selfie.';
+                return;
+            }
+            canvas.width = camera.videoWidth;
+            canvas.height = camera.videoHeight;
+            canvas.getContext('2d').drawImage(camera, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(function (blob) {
+                if (!blob) {
+                    status.textContent = 'Could not capture the selfie. Please try again.';
+                    return;
+                }
+                try {
+                    const transfer = new DataTransfer();
+                    transfer.items.add(new File([blob], 'signup-selfie.jpg', { type: 'image/jpeg' }));
+                    cameraInput.files = transfer.files;
+                    status.textContent = `Selfie ready. ${uploadInput.files.length} additional photo(s) selected.`;
+                } catch (error) {
+                    status.textContent = 'This browser could not attach the selfie. Please use the photo upload option.';
+                }
+            }, 'image/jpeg', 0.9);
+        });
+
+        stop.addEventListener('click', closeCamera);
+
+        uploadInput.addEventListener('change', function () {
+            const total = uploadInput.files.length + cameraInput.files.length;
+            if (total > 5) {
+                uploadInput.value = '';
+                status.textContent = 'Choose at most five photos total, including the camera selfie.';
+                return;
+            }
+            status.textContent = total
+                ? `${total} face photo(s) ready. You can still capture a camera selfie if there is room.`
+                : 'Take a clear selfie or choose up to five photos. You can also skip and ask staff later.';
+        });
+
+        document.querySelector('.form-card form').addEventListener('submit', function () {
+            closeCamera();
+        });
+        window.addEventListener('pagehide', closeCamera);
+    })();
+
     // Apply consistent styling without changing Django form fields or names.
     document.querySelectorAll(
         '.field input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"])'

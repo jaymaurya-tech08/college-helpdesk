@@ -22,6 +22,8 @@ urlpatterns = [
 
     # Helpdesk application
     path("helpdesk/", include("helpdesk.urls")),
+    # ← Add this
+    path("attendance/", include("attendance.urls")),
 
     # Faculty directory
     path(
